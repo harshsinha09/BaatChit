@@ -1,5 +1,3 @@
-"use client";
-
 import { useLiveblocksExtension, FloatingToolbar } from "@liveblocks/react-tiptap";
 import React from "react";
 
@@ -18,6 +16,7 @@ export function Editor() {
         history: false,
       }),
     ],
+    
   });
 
   return (

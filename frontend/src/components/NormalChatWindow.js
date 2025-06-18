@@ -11,25 +11,23 @@ import InfiniteScroll from "react-infinite-scroll-component";
 function NormalChatWindow() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
+  const [emotion, setEmotion] = useState("");
+  const emotionTimeout = useRef(null);
   const socket = useSocket();
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const { chatId } = useParams();
   const [members, setMembers] = useState([]);
-  const messagesEndRef = useRef(null);
   const containerRef = useRef(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
 
+  // Fetch chat members
   const getChatDetails = async () => {
     try {
       const response = await chatAPI.get(`/get-chats/${chatId}?populate=true`, {
         withCredentials: true,
       });
-      if (response.data) {
-        setMembers(response.data?.data.members);
-      } else {
-        setMembers([]);
-      }
+      setMembers(response.data?.data.members || []);
     } catch (err) {
       console.error("Error fetching chat details:", err);
     }
@@ -40,34 +38,56 @@ function NormalChatWindow() {
     getChatDetails();
   }, [chatId]);
 
+  // Emotion detection
+  function getEmotion(e) {
+  const newInput = e.target.value;
+  setInput(newInput);
+
+  if (emotionTimeout.current) clearTimeout(emotionTimeout.current);
+  if (newInput.trim().length === 0) {
+    setEmotion("");
+    return;
+  }
+
+  emotionTimeout.current = setTimeout(() => {
+    fetch("http://localhost:5000/detect_emotion", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: newInput }),
+    })
+      .then((res) => res.json())
+      .then((data) => setEmotion(data.emotion))
+      .catch((err) => {
+        console.error("Emotion detection failed:", err);
+        setEmotion("");
+      });
+  }, 10);
+}
+
+
+  // Send message
   const sendMessage = (e) => {
     e.preventDefault();
     if (!input.trim()) return;
 
-    socket.emit(NEW_MESSAGE, { chatId, members, message: input });
-    console.log("message : ", input);
+    socket.emit(NEW_MESSAGE, { chatId, members, message: input, emotion });
     setInput("");
+    setEmotion("");
   };
 
+  // Fetch messages
   const fetchOlderMessages = useCallback(async () => {
     if (!hasMore || !chatId) return;
-    // console.log("dfasdfasddfsdfsdcfsdfasd")
 
     try {
-      const response = await chatAPI.get(
-        `/get-messages/${chatId}?page=${page}`,
-        { withCredentials: true }
-      );
-     console.log(response)
+      const response = await chatAPI.get(`/get-messages/${chatId}?page=${page}`, {
+        withCredentials: true,
+      });
+
       if (response.data.messages.length > 0) {
-        setMessages((prev) => [...prev,...response.data.messages]);
+        setMessages((prev) => [...prev, ...response.data.messages]);
         setPage((prev) => prev + 1);
-        // console.log("page : ", page);
-        // console.log(response.data.messages.);
-        
-        if (response.data.messages.length < 10) { // Assuming 10 is your page size
-          setHasMore(false);
-        }
+        if (response.data.messages.length < 10) setHasMore(false);
       } else {
         setHasMore(false);
       }
@@ -75,61 +95,54 @@ function NormalChatWindow() {
       console.error("Error fetching older messages:", err);
       setHasMore(false);
     } finally {
-      if (isInitialLoad) {
-        setIsInitialLoad(false);
-      }
+      if (isInitialLoad) setIsInitialLoad(false);
     }
   }, [chatId, page, hasMore, isInitialLoad]);
 
   useEffect(() => {
     if (!chatId) return;
-    
-    // Reset states when chatId changes
     setMessages([]);
     setPage(1);
     setHasMore(true);
     setIsInitialLoad(true);
-    
-    // Load initial messages
     fetchOlderMessages();
   }, [chatId]);
 
+  // Handle incoming messages
   const handleNewMessage = useCallback((msg) => {
-    console.log(msg)
-    console.log(msg.chat, chatId)
-    if (""+ msg.chat == "" +chatId) {
-      setMessages((prev) => [ msg,...prev]);
-      console.log("message at recieve : ", msg); 
+    if ("" + msg.chat === "" + chatId) {
+      setMessages((prev) => [msg, ...prev]);
     }
-  }, [chatId,setMessages]);
+  }, [chatId]);
 
   useEffect(() => {
     if (!socket) return;
-    console.log(socket)
     socket.on(NEW_MESSAGE, handleNewMessage);
-    return () => {
-      socket.off(NEW_MESSAGE, handleNewMessage);
-    };
+    return () => socket.off(NEW_MESSAGE, handleNewMessage);
   }, [socket, handleNewMessage]);
 
   const handleDeleteMessage = async (messageId) => {
-    console.log("Deleting message with ID:", messageId);
     try {
       await chatAPI.delete("/delete-message", {
         data: { messageId },
         withCredentials: true,
       });
-  
-      // Remove message from UI
-      setMessages((prevMessages) => prevMessages.filter((msg) => msg._id !== messageId));
+      setMessages((prev) => prev.filter((msg) => msg._id !== messageId));
     } catch (error) {
       console.error("Error deleting message:", error);
     }
   };
-  
+
   return (
     <div className="NormalchatWindow">
       <TopNavbar />
+
+      {emotion && (
+        <p style={{ marginLeft: "10px", color: "#555" }}>
+          Detected Emotion: <strong>{emotion}</strong>
+        </p>
+      )}
+
       <div
         id="scrollableDiv"
         ref={containerRef}
@@ -145,22 +158,22 @@ function NormalChatWindow() {
           dataLength={messages.length}
           next={fetchOlderMessages}
           hasMore={hasMore}
-          inverse={true} // Important for chat apps
+          inverse={true}
           loader={<h4>Loading older messages...</h4>}
           scrollableTarget="scrollableDiv"
-          style={{ display: 'flex', flexDirection: 'column-reverse' }} // Needed for inverse scroll
+          style={{ display: "flex", flexDirection: "column-reverse" }}
         >
           {messages.map((msg, index) => (
             <Message
-              key={ index}
+              key={index}
               sender_id={msg.sender._id}
               sender_name={msg.sender.name}
               text={msg.content}
-              time={`${new Date(msg.createdAt)?.toLocaleTimeString()} ${new Date(msg.createdAt)?.toLocaleDateString()}` }
+              emotion={msg.emotion} // ✅ Display emotion per message
+              time={`${new Date(msg.createdAt).toLocaleTimeString()} ${new Date(msg.createdAt).toLocaleDateString()}`}
               onDelete={() => handleDeleteMessage(msg._id)}
             />
           ))}
-          {/* <div ref={messagesEndRef} /> */}
         </InfiniteScroll>
       </div>
 
@@ -171,7 +184,7 @@ function NormalChatWindow() {
               type="text"
               placeholder="Type a message..."
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={getEmotion}
               className="chat-box"
             />
             <button type="submit" className="send-button">

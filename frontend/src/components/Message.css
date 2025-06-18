@@ -106,3 +106,34 @@
 .message-container:not(.message__sender) .message-status {
   color: #00ff88;
 }
+
+
+.message-emotion {
+  font-size: 0.75rem;
+  color: #777;
+  margin-top: 4px;
+  font-style: italic;
+}
+
+.emotion-tag {
+  font-weight: bold;
+  text-transform: capitalize;
+}
+
+.emotion-tag.happy {
+  color: #28a745; /* green */
+}
+
+.emotion-tag.sad {
+  color: #007bff; /* blue */
+}
+
+.emotion-tag.angry {
+  color: #dc3545; /* red */
+}
+
+.emotion-tag.surprise {
+  color: #ffc107; /* yellow */
+}
+
+/* You can add more like .emotion-tag.fear, .emotion-tag.love, etc. */

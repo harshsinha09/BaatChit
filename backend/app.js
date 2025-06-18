@@ -15,13 +15,18 @@ import { COLLABMSG, NEW_MESSAGE, NEW_MESSAGE_AlERT } from "./src/constants/event
 import { getSockets } from "./src/utils/socket.utils.js";
 import { Message } from "./src/models/message.model.js";
 ;
+// import { Liveblocks } from "@liveblocks/node";
+
 
 import session from "express-session";
 import MongoStore from "connect-mongo";
 import mongoose from "mongoose";
 import socketAuthMiddleware from "./src/middlewares/socket.middleware.js";
+import { Authorization } from "./src/middlewares/auth.middleware.js";
 
 
+import { Liveblocks } from "@liveblocks/node";
+// import {createClient } from "@liveblocks/node"
 // Initializations
 const app = express();
 const server = createServer(app);
@@ -31,6 +36,10 @@ const io = new Server(server, {
         methods: ["GET", "POST"],
         credentials: true,
     },
+});
+
+const liveblocks = new Liveblocks({
+  secret: "sk_dev_mvprbHQ5eup9L4qGuP3LckW8PYdRDRX2FV07wszG_lLZFA-GC25SrxwCWya6Wa8p",
 });
 
 dotenv.config();
@@ -63,6 +72,55 @@ app.get("/", (req, res) => {
     res.send("Hello from Express");
 });
 
+// app.use((req, res, next) => {
+//     if (!req.user) {
+//       return res.status(401).json({ message: 'User not authenticated' });
+//     }
+//     next();
+//   });  
+app.post("/api/auth", async (req, res) => {
+    try {
+        console.log("Start")
+      const { chatId, name, email, avatar } = req.body;
+      console.log(chatId, name, email,avatar)
+      if (!chatId || !name || !email || !avatar) {
+        return res.status(400).json({ message: "Missing required fields" });
+      }
+  
+      // Create a new session with user identity and permissions
+      const session = liveblocks.prepareSession(email, {
+        userInfo: {
+          name,
+          avatar,
+          color: "#00ff00", // Optional custom color
+        },
+        permissions: [
+          {
+            room: chatId,
+            permissions: [
+              "room:read",
+              "room:write",
+              "threads:read",
+              "threads:write",
+            ],
+          },
+        ],
+      });
+   console.log(session)
+      // Optional: allow wildcards or additional access
+      session.allow(`room:${chatId}`, session.FULL_ACCESS);
+      session.allow(`threads:${chatId}`, session.FULL_ACCESS);
+  console.log(session)
+      const { status, body } = await session.authorize();
+  
+      console.log("Authorization status:", status);
+      res.status(status).send(body);
+    } catch (error) {
+      console.error("Liveblocks auth error:", error);
+      res.status(500).send("Internal Server Error");
+    }
+  });
+  
   
 app.use("/user", userRouter);
 app.use("/chat", chatRouter);
@@ -143,7 +201,7 @@ socket.on(COLLABMSG, ({ content, members }) => {
 
 
 // Start server
-const port = process.env.PORT || 7000;
+const port = process.env.PORT || 8000;
 server.listen(port, () => {
     console.log(`Server is running on http://localhost:${port}`);
 });
